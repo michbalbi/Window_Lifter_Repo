@@ -1,2 +1,1 @@
-Window_Lifter_Repo
-Repository for Window Lifter Project.
+These are the files for the Window Lifter Project.
