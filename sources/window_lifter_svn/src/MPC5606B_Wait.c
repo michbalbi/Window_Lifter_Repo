@@ -116,7 +116,7 @@
 void waitms(T_UWORD ms) {
 	T_ULONG i;
 	T_UBYTE dummy_counter=0;
-	for(i=((T_ULONG)5800*ms);i>0;i--){
+	for(i=((T_ULONG)8000*ms);i>0;i--){
 		dummy_counter++;
 	}
 }
