@@ -42,7 +42,6 @@
 #include "conti_typedefs.h"
 
 #include "MPC5606B_ClkInit.h"
-/*#include "MPC5606B_Wait.h"*/
 
 #define UP_BUTTON 		6
 #define DOWN_BUTTON 	7
