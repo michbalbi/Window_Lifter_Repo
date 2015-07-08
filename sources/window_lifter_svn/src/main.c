@@ -12,7 +12,7 @@
 /* DESCRIPTION : C source Window Lifter file                                  */
 /*============================================================================*/
 /* FUNCTION COMMENT : This file contains the C code for the Window Lifter	  */
-/* application.                                                              */
+/* application.                                                               */
 /*                                                                            */
 /*============================================================================*/
 /*                               OBJECT HISTORY                               */
@@ -29,7 +29,10 @@
 /* Changes to pass C Code Review Template. 									  */
 /*----------------------------------------------------------------------------*/
 /*  1.3      | 01/07/2015  |                               | Michele Balbi    */
-/* Correcting wrong includes (was including .c instead of .h)                 */
+/* Correcting wrong includes (was including .c instead of .h).                */
+/*----------------------------------------------------------------------------*/
+/*  1.4      | 08/07/2015  |                               | Michele Balbi    */
+/* Rewrite of code due to an unconsidered use case w/ noise-prone inputs.     */
 /*============================================================================*/
 
 /* Includes */
@@ -39,7 +42,7 @@
 #include "conti_typedefs.h"
 
 #include "MPC5606B_ClkInit.h"
-#include "MPC5606B_Wait.h"
+/*#include "MPC5606B_Wait.h"*/
 
 #define UP_BUTTON 		6
 #define DOWN_BUTTON 	7
@@ -92,6 +95,12 @@ enum { 			/* enum to hold movement value */
 	PINCH
 }re_move;
 
+enum {
+	NONE,
+	BUTTON_UP,
+	BUTTON_DOWN
+}re_button_pressed;
+
 /*======================================================*/ 
 /* close variable declaration sections                  */
 /*======================================================*/ 
@@ -118,6 +127,114 @@ enum { 			/* enum to hold movement value */
  *  Critical/explanation :    [yes / No]
  **************************************************************/
 
+void WindowLifter_StopMovement(void){
+	TIMER_STOP(4);
+	OUTPUT_LOW(UP_LED);
+	OUTPUT_LOW(DOWN_LED);
+	re_move=DISABLED;
+}
+
+
+ void WindowLifter_TurnONLED(void){
+ 	OUTPUT_HIGH(UP_LED);
+	OUTPUT_LOW(DOWN_LED);
+	rub_led_level++;
+	OUTPUT_HIGH(rub_led_level);
+ }
+ 
+ void WindowLifter_TurnOFFLED(void){
+	OUTPUT_LOW(UP_LED);
+	OUTPUT_HIGH(DOWN_LED);
+	OUTPUT_LOW(rub_led_level);
+	rub_led_level--;
+ }
+ 
+ void Timer10ms_INT_handler(void){
+ 	TIMER_STOP(0);
+ 	if(INPUT_STATE(DOWN_BUTTON)==PRESSED && re_button_pressed==BUTTON_DOWN &&  rub_led_level>=LED_LEVEL_MIN){
+ 		re_move = AUTO_DOWN;
+ 		OUTPUT_LOW(UP_LED);
+		OUTPUT_HIGH(DOWN_LED);
+		TIMER_START(4);
+ 	} 	
+ 	
+ 	if(INPUT_STATE(UP_BUTTON)==PRESSED && re_button_pressed==BUTTON_UP && rub_led_level<LED_LEVEL_MAX){
+ 		re_move = AUTO_UP;
+ 		OUTPUT_HIGH(UP_LED);
+		OUTPUT_LOW(DOWN_LED);
+		TIMER_START(4);
+ 	}
+ 	
+ 	if(INPUT_STATE(PINCH_SIGNAL)==ACTIVE && (re_move==AUTO_UP || re_move==MANUAL_UP)){
+		re_move=PINCH;
+	} 
+ 	
+ 	TIMER_CLEAR_INT_FLAG(0);
+ }
+ 
+ void Timer500ms_INT_handler(void){
+ 	TIMER_STOP(1);
+ 	if(INPUT_STATE(DOWN_BUTTON)==PRESSED && re_button_pressed==BUTTON_DOWN && rub_led_level>=LED_LEVEL_MIN){
+ 		re_move = MANUAL_DOWN;
+ 	} 	
+ 	
+ 	if(INPUT_STATE(UP_BUTTON)==PRESSED && re_button_pressed==BUTTON_UP && rub_led_level<LED_LEVEL_MAX){
+ 		re_move = MANUAL_UP;
+ 	} 
+ 	
+ 	re_button_pressed = NONE;
+ 	TIMER_CLEAR_INT_FLAG(1);
+ }
+ 
+ 
+ void Timer400ms_INT_handler(void){
+ 	if((INPUT_STATE(UP_BUTTON)==PRESSED && re_move==MANUAL_UP) || re_move==AUTO_UP){
+ 		if(rub_led_level<LED_LEVEL_MAX){
+ 			WindowLifter_TurnONLED();
+ 		}else{
+ 			WindowLifter_StopMovement();
+ 		}
+ 	}else{
+ 		if(re_move==MANUAL_UP){
+ 			WindowLifter_StopMovement();
+ 		}
+ 	}
+ 	
+ 	if((INPUT_STATE(DOWN_BUTTON)==PRESSED && re_move==MANUAL_DOWN) || re_move==AUTO_DOWN){
+		if(rub_led_level>=LED_LEVEL_MIN){
+			WindowLifter_TurnOFFLED();
+		}else{
+ 			WindowLifter_StopMovement();
+ 		}
+ 	}else{
+ 		if(re_move==MANUAL_DOWN){
+ 			WindowLifter_StopMovement();
+ 		}
+ 	}
+ 	
+ 	if(re_move==PINCH){
+ 		if(rub_led_level>=LED_LEVEL_MIN){
+			WindowLifter_TurnOFFLED();
+		}else{
+ 			WindowLifter_StopMovement();
+ 			re_move=PINCH;
+ 			TIMER_START(5); 			
+ 		}
+ 	}
+ 	
+ 	TIMER_CLEAR_INT_FLAG(4);
+ }
+ 
+ void Timer5s_INT_handler(void){
+ 	
+ 	TIMER_STOP(5);
+ 	re_move=DISABLED;
+ 	
+ 	TIMER_CLEAR_INT_FLAG(5);
+ }
+
+
+
 
 /* Private functions */
 /* ----------------- */
@@ -132,100 +249,20 @@ enum { 			/* enum to hold movement value */
 void Button_handler(void){
 	/* Check if the UP button was the one that generated the External Interrupt */
 	if (EXTINT_GET_FLAG(1) && (re_move==DISABLED)){
-		
-		/* 10ms wait to avoid invalid inputs */
-		waitms(10);
-		
-		/* If button is still pressed, auto mode is selected */
-		if(INPUT_STATE(UP_BUTTON)==PRESSED){
-			re_move = AUTO_UP;
-		}
-		
-		/* 500ms wait to enable manual mode */
-		waitms(500);
-		
-		/* If button is still pressed, manual mode is selected */
-		if(INPUT_STATE(UP_BUTTON)==PRESSED){
-			re_move = MANUAL_UP;
-		}
-		
-		/* while loop to turn on LEDs with 400ms wait interval in auto mode.
-		   We check if the highest LED has been turned on, if auto mode is still
-		   enabled and if the up button is still pressed						*/		
-		while((rub_led_level<LED_LEVEL_MAX) && (re_move==AUTO_UP)){
-			waitms(400);
-			OUTPUT_HIGH(UP_LED);
-			if(re_move==AUTO_UP){
-				rub_led_level++;
-				OUTPUT_HIGH(rub_led_level);
-			}
-		}
-		
-		/* while loop to turn on LEDs with 400ms wait interval in manual mode.
-		   We check if the highest LED has been turned on, if manual mode is still
-		   enabled and if the up button is still pressed						*/	
-		while((rub_led_level<LED_LEVEL_MAX) && (INPUT_STATE(UP_BUTTON)==PRESSED) && (re_move==MANUAL_UP)){
-			waitms(400);
-			OUTPUT_HIGH(UP_LED);
-			if(re_move==MANUAL_UP){
-				rub_led_level++;
-				OUTPUT_HIGH(rub_led_level);
-			}
-		}
-		
-		re_move = DISABLED;
-		OUTPUT_LOW(UP_LED);
-		
-		/* Interrupt flag clear to enable next interrupts */
-		EXTINT_CLEAR_INT_FLAG(1);
+		re_button_pressed = BUTTON_UP;
+		TIMER_START(0);
+		TIMER_START(1);		
 	}
 	
 	/* Check if the DOWN button was the one that generated the External Interrupt */
 	if (EXTINT_GET_FLAG(2) && (re_move==DISABLED)){
-		
-		/* 10ms wait to avoid invalid inputs */
-		waitms(10); 					
-		
-		/* If button is still pressed, auto mode is selected*/
-		if(INPUT_STATE(DOWN_BUTTON)==PRESSED){		
-			re_move = AUTO_DOWN;		
-		}
-		
-		/* 500ms wait to enable manual mode */
-		waitms(500);
-		
-		/* If button is still pressed, manual mode is selected */
-		if(INPUT_STATE(DOWN_BUTTON)==PRESSED){		
-			re_move = MANUAL_DOWN;
-		}
-		
-		/* while loop to turn off LEDs with 400ms wait interval in auto mode.
-		   We check if the lowest LED has been turned off and if auto mode is still
-		   enabled																*/
-		while(rub_led_level>=LED_LEVEL_MIN && re_move==AUTO_DOWN){
-			waitms(400);
-			OUTPUT_HIGH(DOWN_LED);
-			OUTPUT_LOW(rub_led_level);
-			rub_led_level--;
-		}
-		
-		/* while loop to turn off LEDs with 400ms wait interval in manual mode.
-		   We check if the lowest LED has been turned off, if manual mode is still
-		   enabled and if the down button is still pressed						*/			
-		while((rub_led_level>=LED_LEVEL_MIN) && (INPUT_STATE(DOWN_BUTTON)==PRESSED) && (re_move==MANUAL_DOWN)){
-			waitms(400);
-			OUTPUT_HIGH(DOWN_LED);
-			OUTPUT_LOW(rub_led_level);
-			rub_led_level--;
-		}
-		
-		OUTPUT_LOW(DOWN_LED);
-		re_move = DISABLED;
-		
-		/* Interrupt flag clear to enable next interrupts */
-		EXTINT_CLEAR_INT_FLAG(2);
+		re_button_pressed = BUTTON_DOWN;
+		TIMER_START(0);
+		TIMER_START(1);
 	}
 	
+	EXTINT_CLEAR_INT_FLAG(1);
+	EXTINT_CLEAR_INT_FLAG(2);
 }
 
 /**************************************************************
@@ -241,29 +278,10 @@ void Pinch_handler(void){
 	/* Check that the pinch signal pin was effectively the one that generated the interrupt */
 	if (EXTINT_GET_FLAG(21)){
 		
-		/* 10ms wait to filter invalid inputs */
-		waitms(10);
-		
-		/* If the pinch input is still present and there is any up movement
-		   we stop it and turn LEDs off									 */
-		if((INPUT_STATE(PINCH_SIGNAL)==ACTIVE) && ((re_move==AUTO_UP) || (re_move==MANUAL_UP))){
-			re_move = PINCH;
-			OUTPUT_LOW(UP_LED);
-			OUTPUT_HIGH(DOWN_LED);
-			
-			/* while loop to turn off LEDs in 400ms intervals with check for lowest LED*/
-			while(rub_led_level>=LED_LEVEL_MIN){
-				waitms(400);
-				OUTPUT_LOW(rub_led_level);
-				rub_led_level--;
-			}
-			
-			OUTPUT_LOW(DOWN_LED);
-			
-			/* 5s wait after turning off all LEDs, by requirement */
-			waitms(5000);
-			re_move = DISABLED;
-		}
+		/*if(re_move==AUTO_UP || re_move==MANUAL_UP){
+			re_move=PINCH;
+		}*/
+		TIMER_START(0);
 		
 		/* Clear interrupt flag to allow next interrupts */
 		EXTINT_CLEAR_INT_FLAG(21);
@@ -329,25 +347,42 @@ void main(void) {
     
     /* INT init, interupt handlers installation */
     INT_SW_VECTOR_MODE();
-    INTC_InstallINTCInterruptHandler(Button_handler, EXT0_Vector, PRIORITY8);
-    INTC_InstallINTCInterruptHandler(Pinch_handler, EXT2_Vector, PRIORITY10);
+    
+    TIMER_INIT();
+    TIMER_LOAD_VALUE(10,0);
+    TIMER_LOAD_VALUE(500,1);
+    TIMER_LOAD_VALUE(400,4);
+    TIMER_LOAD_VALUE(5000,5);
+    TIMER_ENABLE_INT(0);			/* Enable Timer0 INT */
+    TIMER_ENABLE_INT(1);
+    TIMER_ENABLE_INT(4);
+    TIMER_ENABLE_INT(5);
     
     /* External Interrupts enabling for falling-edge */
-    EXTINT_ENABLE(1);
-    EXTINT_ENABLE(2);
-    EXTINT_ENABLE(21);
     EXTINT_FALLING_EDGE(1);
     EXTINT_FALLING_EDGE(2);
     EXTINT_FALLING_EDGE(21);
+    EXTINT_ENABLE(1);
+    EXTINT_ENABLE(2);
+    EXTINT_ENABLE(21);
+    
+    INTC_InstallINTCInterruptHandler(Button_handler, EXT0_Vector, PRIORITY7);
+    INTC_InstallINTCInterruptHandler(Pinch_handler, EXT2_Vector, PRIORITY10);
+    INTC_InstallINTCInterruptHandler(Timer10ms_INT_handler, PIT0_Vector, PRIORITY8);
+    INTC_InstallINTCInterruptHandler(Timer500ms_INT_handler, PIT1_Vector, PRIORITY8);
+    INTC_InstallINTCInterruptHandler(Timer400ms_INT_handler, PIT4_Vector, PRIORITY8);
+    INTC_InstallINTCInterruptHandler(Timer5s_INT_handler, PIT5_Vector, PRIORITY8);
     
     INT_LOWER_CPR(PRIORITY0);
     INTC_InitINTCInterrupts();  
     
     /* No movement at the beggining */
-    re_move = DISABLED;	
+    re_move = DISABLED;
+    re_button_pressed = NONE;
+    
     
     /* Infinite for loop */
-	for(;;){
+	for(;;){ 
 		
 	}
   
