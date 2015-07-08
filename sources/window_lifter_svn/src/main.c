@@ -358,6 +358,7 @@ void main(void) {
     TIMER_ENABLE_INT(5);
     
     /* External Interrupts enabling for falling-edge */
+    /*dummy comment*/
     EXTINT_FALLING_EDGE(1);
     EXTINT_FALLING_EDGE(2);
     EXTINT_FALLING_EDGE(21);
