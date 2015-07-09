@@ -31,7 +31,6 @@
 /* Includes */
 /* -------- */
 #include "MPC5606B.h"
-#include "MPC5606B_Mapper.h"
 
 /* Exported types and constants */
 /* ---------------------------- */
@@ -84,6 +83,15 @@ extern void disableWatchdog(void);
 
 
 /* Exported defines */
+#define CLK_FREQ 64000000U
 
+/* Register gating addresses offsets for PCTL registers */
+
+#define PCTL_ADC_0 		32
+#define PCTL_ADC_1	 	33
+#define PCTL_SIUL 		68
+#define PCTL_PIT 		92
+#define PCTL_EMIOS_0 	72
+#define PCTL_EMIOS_1 	73
 
 #endif

@@ -35,7 +35,6 @@
 /* Includes */
 /* -------- */
 #include "MPC5606B.h"
-#include "MPC5606B_Mapper.h"
 #include "MPC5606B_ClkInit.h"
 
 /* Functions macros, constants, types and datas         */
