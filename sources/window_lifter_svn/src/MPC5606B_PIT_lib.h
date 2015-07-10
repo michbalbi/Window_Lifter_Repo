@@ -26,6 +26,7 @@
 #define _MPC5606B_PIT_LIB_
 
 #include "MPC5606B.h"
+#include "MPC5606B_ClkInit.h"
 
 /* Timer Macros */
 
